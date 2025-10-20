@@ -1,0 +1,25 @@
+How to use this archive:
+
+1. Backend
+   - cd backend
+   - cp .env.example .env and set MONGO_URI and JWT_SECRET
+   - npm install
+   - npm run dev
+   - Default server: http://localhost:4000
+
+   MongoDB:
+   - Database name: socialgram
+   - Collections created by Mongoose models:
+     * users
+     * friendrequests
+     * messages
+
+2. Frontend
+   - cd frontend
+   - npm install
+   - create a Vite project or use the files provided
+   - npm run dev (ensure VITE_API_URL if backend not default)
+
+3. Notes
+   - Node packages excluded. Install locally.
+   - If you want images/posts upload, integrate multer or S3.
