@@ -13,5 +13,3 @@ This archive contains a starter fullstack project:
 
 See `backend/.env.example` for env variables.
 
-# devloper
-devloped by ishant dahiya with ai 
