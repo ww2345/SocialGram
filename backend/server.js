@@ -1,15 +1,19 @@
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const multer = require('multer');
 const { Server } = require('socket.io');
 
 const User = require('./models/User');
 const FriendRequest = require('./models/FriendRequest');
 const Message = require('./models/Message');
+const Post = require('./models/Post');
 
 const app = express();
 const server = http.createServer(app);
@@ -29,6 +33,39 @@ app.use(cors({
   origin: process.env.CLIENT_URL || '*',
   credentials: true,
 }));
+
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '') || '.jpg';
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\/(jpeg|png|gif|webp)$/.test(file.mimetype)) cb(null, true);
+    else cb(new Error('Only JPEG, PNG, GIF, or WebP images are allowed'));
+  },
+});
+
+function uploadImage(req, res, next) {
+  upload.single('image')(req, res, (err) => {
+    if (!err) return next();
+    const msg =
+      err.code === 'LIMIT_FILE_SIZE'
+        ? 'Image must be 5MB or smaller'
+        : err.message || 'Upload failed';
+    return res.status(400).json({ error: msg });
+  });
+}
+
+app.use('/uploads', express.static(uploadDir));
 
 // ✅ Environment vars
 const PORT = process.env.PORT || 4000;
@@ -53,6 +90,24 @@ function auth(req, res, next) {
   } catch (e) {
     return res.status(401).json({ error: 'Invalid token' });
   }
+}
+
+function safeUnlinkUpload(imageUrl) {
+  if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.startsWith('/uploads/')) return;
+  const name = path.basename(imageUrl);
+  if (!name || name === '.' || name === '..') return;
+  const full = path.join(uploadDir, name);
+  if (!full.startsWith(path.resolve(uploadDir))) return;
+  fs.unlink(full, () => {});
+}
+
+function safeUnlinkUpload(imageUrl) {
+  if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.startsWith('/uploads/')) return;
+  const base = path.basename(imageUrl);
+  if (!base || base === '.' || base === '..') return;
+  const full = path.join(uploadDir, base);
+  if (!full.startsWith(path.resolve(uploadDir))) return;
+  fs.unlink(full, () => {});
 }
 
 // 🧾 Routes (Auth, Friends, Users, Messages)
@@ -92,6 +147,66 @@ app.get('/api/users/me', auth, async (req, res) => {
   res.json(user);
 });
 
+app.delete('/api/friends/:friendId', auth, async (req, res) => {
+  try {
+    const friendId = req.params.friendId;
+    if (String(friendId) === String(req.user.id))
+      return res.status(400).json({ error: 'Invalid user' });
+
+    const me = await User.findById(req.user.id).select('friends').lean();
+    const isFriend = (me?.friends || []).some((id) => String(id) === String(friendId));
+    if (!isFriend) return res.status(404).json({ error: 'Not friends with this user' });
+
+    await User.findByIdAndUpdate(req.user.id, { $pull: { friends: friendId } });
+    await User.findByIdAndUpdate(friendId, { $pull: { friends: req.user.id } });
+    await FriendRequest.deleteMany({
+      $or: [
+        { from: req.user.id, to: friendId },
+        { from: friendId, to: req.user.id },
+      ],
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not unfriend' });
+  }
+});
+
+app.delete('/api/users/me', auth, async (req, res) => {
+  try {
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (!password) return res.status(400).json({ error: 'Password is required to delete your account' });
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const match = await bcrypt.compare(password, user.passwordHash);
+    if (!match) return res.status(400).json({ error: 'Incorrect password' });
+
+    const userId = user._id;
+
+    const myPosts = await Post.find({ author: userId }).select('imageUrl').lean();
+    for (const p of myPosts) safeUnlinkUpload(p.imageUrl);
+    safeUnlinkUpload(user.avatarUrl);
+
+    await Post.deleteMany({ author: userId });
+    await Post.updateMany({}, { $pull: { likes: userId } });
+    await Post.updateMany({}, { $pull: { comments: { author: userId } } });
+
+    await FriendRequest.deleteMany({
+      $or: [{ from: userId }, { to: userId }],
+    });
+    await Message.deleteMany({
+      $or: [{ from: userId }, { to: userId }],
+    });
+    await User.updateMany({ friends: userId }, { $pull: { friends: userId } });
+
+    await User.findByIdAndDelete(userId);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not delete account' });
+  }
+});
+
 app.get('/api/users/search', auth, async (req, res) => {
   const q = req.query.q || '';
   const users = await User.find({
@@ -100,6 +215,57 @@ app.get('/api/users/search', auth, async (req, res) => {
     .limit(20)
     .select('username avatarUrl bio');
   res.json(users);
+});
+
+// People to discover (Instagram-style explore / suggestions)
+app.get('/api/users/explore', auth, async (req, res) => {
+  try {
+    const meId = req.user.id;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 48, 1), 100);
+
+    const me = await User.findById(meId).select('friends').lean();
+    const friendIds = new Set((me?.friends || []).map((id) => String(id)));
+
+    const pending = await FriendRequest.find({
+      status: 'pending',
+      $or: [{ from: meId }, { to: meId }],
+    }).lean();
+
+    const requestedTo = new Set();
+    const requestedFrom = new Set();
+    for (const fr of pending) {
+      if (String(fr.from) === String(meId)) requestedTo.add(String(fr.to));
+      else requestedFrom.add(String(fr.from));
+    }
+
+    const poolSize = Math.min(200, Math.max(limit * 4, limit));
+    const meObjectId = new mongoose.Types.ObjectId(meId);
+    const candidates = await User.aggregate([
+      { $match: { _id: { $ne: meObjectId } } },
+      { $sample: { size: poolSize } },
+      { $project: { username: 1, avatarUrl: 1, bio: 1 } },
+    ]);
+
+    const order = { none: 0, requests_you: 1, requested_by_you: 2, friend: 3 };
+    const shaped = candidates.map((u) => {
+      const id = String(u._id);
+      let relationship = 'none';
+      if (friendIds.has(id)) relationship = 'friend';
+      else if (requestedTo.has(id)) relationship = 'requested_by_you';
+      else if (requestedFrom.has(id)) relationship = 'requests_you';
+      return { ...u, relationship };
+    });
+
+    shaped.sort((a, b) => {
+      const d = order[a.relationship] - order[b.relationship];
+      if (d !== 0) return d;
+      return (a.username || '').localeCompare(b.username || '');
+    });
+
+    res.json(shaped.slice(0, limit));
+  } catch (e) {
+    res.status(500).json({ error: 'Could not load explore' });
+  }
 });
 
 app.post('/api/requests/send', auth, async (req, res) => {
@@ -158,6 +324,103 @@ app.get('/api/messages/:conversationId', auth, async (req, res) => {
     .sort('createdAt')
     .limit(200);
   res.json(msgs);
+});
+
+// 📸 Posts (feed, upload, likes, comments)
+app.get('/api/posts/feed', auth, async (req, res) => {
+  try {
+    const me = await User.findById(req.user.id).select('friends').lean();
+    const friendIds = (me?.friends || []).map((id) => String(id));
+    const authorIds = [String(req.user.id), ...friendIds];
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const skip = Math.max(parseInt(req.query.skip, 10) || 0, 0);
+
+    const posts = await Post.find({ author: { $in: authorIds } })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('author', 'username avatarUrl')
+      .populate('comments.author', 'username avatarUrl')
+      .lean();
+
+    const uid = String(req.user.id);
+    const shaped = posts.map((p) => ({
+      ...p,
+      likeCount: (p.likes || []).length,
+      likedByMe: (p.likes || []).some((id) => String(id) === uid),
+      likes: undefined,
+    }));
+
+    res.json(shaped);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load feed' });
+  }
+});
+
+app.post('/api/posts', auth, uploadImage, async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Image is required' });
+    const caption = typeof req.body.caption === 'string' ? req.body.caption.trim() : '';
+    const imageUrl = `/uploads/${req.file.filename}`;
+    const post = await Post.create({
+      author: req.user.id,
+      caption,
+      imageUrl,
+    });
+    await post.populate('author', 'username avatarUrl');
+    const doc = post.toObject();
+    res.status(201).json({
+      ...doc,
+      likeCount: 0,
+      likedByMe: false,
+      likes: undefined,
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not create post' });
+  }
+});
+
+app.post('/api/posts/:id/like', auth, async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const idx = post.likes.findIndex((id) => String(id) === String(req.user.id));
+    let likedByMe;
+    if (idx >= 0) {
+      post.likes.splice(idx, 1);
+      likedByMe = false;
+    } else {
+      post.likes.push(req.user.id);
+      likedByMe = true;
+    }
+    await post.save();
+    res.json({ likeCount: post.likes.length, likedByMe });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not update like' });
+  }
+});
+
+app.post('/api/posts/:id/comments', auth, async (req, res) => {
+  try {
+    const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
+    if (!text) return res.status(400).json({ error: 'Comment text is required' });
+
+    const post = await Post.findById(req.params.id);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    post.comments.push({ author: req.user.id, text });
+    await post.save();
+
+    const fresh = await Post.findById(post._id)
+      .populate({ path: 'comments.author', select: 'username avatarUrl' })
+      .lean();
+
+    const last = fresh.comments[fresh.comments.length - 1];
+    res.status(201).json(last);
+  } catch (e) {
+    res.status(500).json({ error: 'Could not add comment' });
+  }
 });
 
 // 🧠 Socket.io logic

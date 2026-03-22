@@ -110,26 +110,6 @@ Events:
 - Server → Room: `message` (sends the saved message document)
 - Server → Recipient socket (if online): `new_message_notification({ from, conversationId })`
 
-## Architecture Diagram
-```mermaid
-flowchart LR
-  U[User] --> B[Browser]
-  B -->|React + Vite SPA| SPA[Frontend]
-
-  SPA -->|Axios (REST JSON)| API[Express API]
-  SPA -->|Socket.IO (WebSocket)| WS[Socket.IO Server]
-
-  API -->|JWT verify| AUTH[Auth middleware]
-  WS -->|JWT verify| AUTH
-
-  API --> ODM[Mongoose Models]
-  WS --> ODM
-  ODM --> DB[(MongoDB)]
-
-  ENV[.env / Vite env] --> API
-  ENV --> SPA
-```
-
 ## Project Structure
 - `backend/server.js` — Express API + Socket.IO server
 - `backend/models/*` — Mongoose models (`User`, `FriendRequest`, `Message`)

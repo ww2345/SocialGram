@@ -14,10 +14,13 @@ export default function Navbar({ user, onLogout }){
 
       <nav className='nav-links'>
         <NavLink to='/' className={({isActive})=> 'nav-link ' + (isActive? 'active':'')}>Home</NavLink>
+        <NavLink to='/create-post' className={({isActive})=> 'nav-link ' + (isActive? 'active':'')}>New post</NavLink>
+        <NavLink to='/explore' className={({isActive})=> 'nav-link ' + (isActive? 'active':'')}>Explore</NavLink>
         <NavLink to='/search' className={({isActive})=> 'nav-link ' + (isActive? 'active':'')}>Search</NavLink>
         <NavLink to='/requests' className={({isActive})=> 'nav-link ' + (isActive? 'active':'')}>Requests</NavLink>
         <NavLink to='/friends' className={({isActive})=> 'nav-link ' + (isActive? 'active':'')}>Friends</NavLink>
-        <NavLink to='/About' className={({isActive})=> 'nav-link ' + (isActive? 'active':'')}>About</NavLink>
+        <NavLink to='/account' className={({isActive})=> 'nav-link ' + (isActive? 'active':'')}>Account</NavLink>
+        <NavLink to='/about' className={({isActive})=> 'nav-link ' + (isActive? 'active':'')}>About</NavLink>
         
 
         <button onClick={onLogout} className='nav-link' style={{border:'none',background:'transparent',textAlign:'left'}}>Logout</button>
