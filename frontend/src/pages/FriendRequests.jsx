@@ -51,7 +51,7 @@ export default function FriendRequests(){
         <div className='user-list'>
           {outgoing.length===0 && <div className='small'>No outgoing requests</div>}
           {outgoing.map(r=>(
-            <div className='user-item' key={r._1}>
+            <div className='user-item' key={r._id}>
               <div>
                 <div style={{fontWeight:700}}>{r.to.username}</div>
                 <div className='small'>request sent</div>

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 import api from '../utils/api';
+import { API_BASE_URL } from '../utils/config';
 
 export default function Chat({ user }){
   const { conversationId } = useParams();
@@ -14,7 +15,9 @@ export default function Chat({ user }){
     if(!conversationId) return;
     api.get('/api/messages/' + conversationId).then(r=> setMessages(r.data)).catch(()=>{});
     const token = localStorage.getItem('token');
-    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:4000', { auth: { token } });
+    const socket = API_BASE_URL
+      ? io(API_BASE_URL, { auth: { token } })
+      : io({ auth: { token } });
     socketRef.current = socket;
     socket.emit('joinConversation', conversationId);
     socket.on('message', (m) => {

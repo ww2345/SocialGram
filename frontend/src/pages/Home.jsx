@@ -1,14 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../utils/api';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-
-function mediaUrl(path) {
-  if (!path) return '';
-  if (path.startsWith('http')) return path;
-  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
-}
+import { resolveAssetUrl } from '../utils/config';
 
 export default function Home({ user }) {
   const [posts, setPosts] = useState([]);
@@ -99,7 +92,7 @@ export default function Home({ user }) {
         {posts.map((post) => {
           const author = post.author;
           const name = author?.username || 'User';
-          const avatar = mediaUrl(author?.avatarUrl);
+          const avatar = resolveAssetUrl(author?.avatarUrl);
           return (
             <article className="card post-card" key={post._id}>
               <header className="post-header">
@@ -123,7 +116,7 @@ export default function Home({ user }) {
               <div className="post-media-wrap">
                 <img
                   className="post-media"
-                  src={mediaUrl(post.imageUrl)}
+                  src={resolveAssetUrl(post.imageUrl)}
                   alt={post.caption ? post.caption.slice(0, 80) : 'Post'}
                 />
               </div>

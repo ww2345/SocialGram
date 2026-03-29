@@ -1,10 +1,8 @@
 import axios from 'axios';
-
-// Read backend URL from .env
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+import { API_BASE_URL } from './config';
 
 const instance = axios.create({
-  baseURL: API,
+  baseURL: API_BASE_URL,
 });
 
 // Attach token automatically if user is logged in

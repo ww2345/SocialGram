@@ -1,14 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../utils/api';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-
-function avatarUrl(path) {
-  if (!path) return '';
-  if (path.startsWith('http')) return path;
-  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
-}
+import { resolveAssetUrl } from '../utils/config';
 
 export default function Explore() {
   const [people, setPeople] = useState([]);
@@ -89,7 +82,7 @@ export default function Explore() {
       <div className="explore-grid">
         {people.map((u) => {
           const name = u.username || 'User';
-          const img = avatarUrl(u.avatarUrl);
+          const img = resolveAssetUrl(u.avatarUrl);
           const r = u.relationship || 'none';
           return (
             <div className="card explore-card" key={u._id}>
