@@ -10,6 +10,8 @@ What you can do today:
 - View your friends list
 - Real‑time 1:1 chat via Socket.IO
 
+## project is live now : https://socialgram-q7t2.onrender.com/explore
+
 **Important**
 - MongoDB database (default): `socialgram` (from `MONGO_URI`)
 - Collections: `users`, `friendrequests`, `messages`
