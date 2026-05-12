@@ -138,4 +138,4 @@ Events:
 ## Project Structure
 - `backend/server.js` — Express API + Socket.IO server
 - `backend/models/*` — Mongoose models (`User`, `FriendRequest`, `Message`)
-- `frontend/src/*` — React UI (Auth, Search, Requests, Friends, Chat)
+- `frontend/src/*` — React UI (Auth, Search, Requests, Friends, Chat).
